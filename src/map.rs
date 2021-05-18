@@ -8,8 +8,7 @@ pub use crate::mutable_keys::MutableKeys;
 #[cfg(feature = "rayon")]
 pub use crate::rayon::map as rayon;
 
-use crate::vec::{self, Vec};
-use crate::{Allocator, Global};
+use crate::alloc_inner::{self, Allocator, Global, Vec};
 use ::core::cmp::Ordering;
 use ::core::fmt;
 use ::core::hash::{BuildHasher, Hash, Hasher};
@@ -770,11 +769,12 @@ where
     where
         F: FnMut(&K, &V, &K, &V) -> Ordering,
     {
-        let mut entries = self.into_entries();
+        let mut entries: Vec<_, Arena> = self.into_entries();
         entries.sort_by(move |a, b| cmp(&a.key, &a.value, &b.key, &b.value));
-        IntoIter {
-            iter: entries.into_iter(),
-        }
+
+        let iter = alloc_inner::vec::Vec::into_iter(entries.into());
+
+        IntoIter { iter: iter.into() }
     }
 
     /// Sort the map's key-value pairs by the default ordering of the keys, but
@@ -1189,7 +1189,7 @@ impl<K, V> FusedIterator for IterMut<'_, K, V> {}
 /// [`into_iter`]: struct.IndexMap.html#method.into_iter
 /// [`IndexMap`]: struct.IndexMap.html
 pub struct IntoIter<K, V, Arena: Allocator> {
-    pub(crate) iter: vec::IntoIter<Bucket<K, V>, Arena>,
+    pub(crate) iter: alloc_inner::IntoIter<Bucket<K, V>, Arena>,
 }
 
 impl<K, V, Arena: Allocator> Iterator for IntoIter<K, V, Arena> {
@@ -1225,7 +1225,7 @@ impl<K: fmt::Debug, V: fmt::Debug, Arena: Allocator> fmt::Debug for IntoIter<K, 
 /// [`drain`]: struct.IndexMap.html#method.drain
 /// [`IndexMap`]: struct.IndexMap.html
 pub struct Drain<'a, K, V, Arena: Allocator> {
-    pub(crate) iter: vec::Drain<'a, Bucket<K, V>, Arena>,
+    pub(crate) iter: alloc_inner::Drain<'a, Bucket<K, V>, Arena>,
 }
 
 impl<K, V, Arena: Allocator> Iterator for Drain<'_, K, V, Arena> {
@@ -1282,9 +1282,8 @@ where
     type Item = (K, V);
     type IntoIter = IntoIter<K, V, Arena>;
     fn into_iter(self) -> Self::IntoIter {
-        IntoIter {
-            iter: self.into_entries().into_iter(),
-        }
+        let iter = alloc_inner::vec::Vec::into_iter(self.into_entries().into());
+        IntoIter { iter: iter.into() }
     }
 }
 
@@ -1858,7 +1857,7 @@ mod tests {
         map.extend(vec![(5, 6)]);
         assert_eq!(
             map.into_iter().collect::<Vec<_>>(),
-            vec![(1, 2), (3, 4), (5, 6)]
+            vec![(1, 2), (3, 4), (5, 6)].into()
         );
     }
 

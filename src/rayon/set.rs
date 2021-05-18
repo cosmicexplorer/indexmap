@@ -9,7 +9,7 @@ use super::collect;
 use rayon::iter::plumbing::{Consumer, ProducerCallback, UnindexedConsumer};
 use rayon::prelude::*;
 
-use crate::vec::Vec;
+use crate::Vec;
 use core::cmp::Ordering;
 use core::fmt;
 use core::hash::{BuildHasher, Hash};

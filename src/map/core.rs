@@ -1,3 +1,5 @@
+#![allow(unsafe_code)]
+
 //! This is the core implementation that doesn't depend on the hasher at all.
 //!
 //! The methods of `IndexMapCore` don't use any Hash properties of K.
@@ -11,8 +13,7 @@ mod raw;
 
 use hashbrown::raw::RawTable;
 
-use crate::vec::{Drain, Vec};
-use crate::Allocator;
+use crate::alloc_inner::{Allocator, Drain, Vec};
 use core::cmp;
 use core::fmt;
 use core::mem::replace;
@@ -110,7 +111,7 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IndexMapCore")
             .field("indices", &raw::DebugIndices(&self.indices))
-            .field("entries", &self.entries)
+            .field("entries", &self.entries.as_ref())
             .finish()
     }
 }
@@ -195,7 +196,7 @@ where
     {
         let range = simplify_range(range, self.entries.len());
         self.erase_indices(range.start, range.end);
-        self.entries.drain(range)
+        self.entries.drain(range).into()
     }
 
     #[cfg(feature = "rayon")]
@@ -218,11 +219,13 @@ where
 
         let mut indices = RawTable::with_capacity_in(entries.len(), self.arena.clone());
         for (i, entry) in enumerate(&entries) {
-            indices.insert_no_grow(entry.hash.get(), i);
+            unsafe {
+                indices.insert_no_grow(entry.hash.get(), i);
+            }
         }
         Self {
             indices,
-            entries,
+            entries: entries.into(),
             arena: self.arena.clone(),
         }
     }
@@ -410,12 +413,16 @@ where
 
             // Reinsert stable indices
             for (i, entry) in enumerate(start_entries) {
-                self.indices.insert_no_grow(entry.hash.get(), i);
+                unsafe {
+                    self.indices.insert_no_grow(entry.hash.get(), i);
+                }
             }
 
             // Reinsert shifted indices
             for (i, entry) in (start..).zip(shifted_entries) {
-                self.indices.insert_no_grow(entry.hash.get(), i);
+                unsafe {
+                    self.indices.insert_no_grow(entry.hash.get(), i);
+                }
             }
         } else if erased + shifted < half_capacity {
             // Find each affected index, as there are few to adjust
@@ -466,9 +473,11 @@ where
     fn rebuild_hash_table(&mut self) {
         self.indices.clear();
         debug_assert!(self.indices.capacity() >= self.entries.len());
-        for (i, entry) in enumerate(&self.entries) {
+        for (i, entry) in enumerate(self.entries.as_mut()) {
             // We should never have to reallocate, so there's no need for a real hasher.
-            self.indices.insert_no_grow(entry.hash.get(), i);
+            unsafe {
+                self.indices.insert_no_grow(entry.hash.get(), i);
+            }
         }
     }
 

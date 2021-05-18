@@ -6,8 +6,7 @@ pub use crate::rayon::set as rayon;
 #[cfg(has_std)]
 use std::collections::hash_map::RandomState;
 
-use crate::vec::{self, Vec};
-use crate::{Allocator, Global};
+use crate::alloc_inner::{self, Allocator, Global, Vec};
 use core::cmp::Ordering;
 use core::fmt;
 use core::hash::{BuildHasher, Hash};
@@ -810,7 +809,7 @@ where
 /// [`IndexSet`]: struct.IndexSet.html
 /// [`into_iter`]: struct.IndexSet.html#method.into_iter
 pub struct IntoIter<T, Arena: Allocator + Clone> {
-    iter: vec::IntoIter<Bucket<T>, Arena>,
+    iter: alloc_inner::IntoIter<Bucket<T>, Arena>,
 }
 
 impl<T, Arena> Iterator for IntoIter<T, Arena>
@@ -901,7 +900,7 @@ impl<T: fmt::Debug> fmt::Debug for Iter<'_, T> {
 /// [`IndexSet`]: struct.IndexSet.html
 /// [`drain`]: struct.IndexSet.html#method.drain
 pub struct Drain<'a, T, Arena: Allocator + Clone> {
-    iter: vec::Drain<'a, Bucket<T>, Arena>,
+    iter: alloc_inner::Drain<'a, Bucket<T>, Arena>,
 }
 
 impl<T, Arena> Iterator for Drain<'_, T, Arena>
@@ -1780,7 +1779,10 @@ mod tests {
         let mut set = IndexSet::new();
         set.extend(vec![&1, &2, &3, &4]);
         set.extend(vec![5, 6]);
-        assert_eq!(set.into_iter().collect::<Vec<_>>(), vec![1, 2, 3, 4, 5, 6]);
+        assert_eq!(
+            set.into_iter().collect::<Vec<_>>(),
+            vec![1, 2, 3, 4, 5, 6].into()
+        );
     }
 
     #[test]

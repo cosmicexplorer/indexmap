@@ -2,7 +2,8 @@
 //! This module encapsulates the `unsafe` access to `hashbrown::raw::RawTable`,
 //! mostly in dealing with its bucket "pointers".
 
-use super::{super::Allocator, equivalent, Entry, HashValue, IndexMapCore, VacantEntry};
+use super::{equivalent, Entry, HashValue, IndexMapCore, VacantEntry};
+use crate::alloc_inner::Allocator;
 use core::fmt;
 use core::mem::replace;
 use hashbrown::raw::RawTable;

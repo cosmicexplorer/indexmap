@@ -1,6 +1,6 @@
 use core::hash::{BuildHasher, Hash};
 
-use super::{Allocator, Equivalent, IndexMap};
+use super::{alloc_inner::Allocator, Equivalent, IndexMap};
 
 pub struct PrivateMarker {}
 

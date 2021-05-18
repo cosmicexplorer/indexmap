@@ -1,8 +1,5 @@
-#![feature(allocator_api)]
-
-use indexmap::{IndexMap, IndexSet};
+use indexmap::{alloc_inner::Allocator, IndexMap, IndexSet};
 use itertools::Itertools;
-use std::alloc::Allocator;
 
 use quickcheck::quickcheck;
 use quickcheck::Arbitrary;

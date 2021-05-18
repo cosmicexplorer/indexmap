@@ -1,7 +1,6 @@
 // We *mostly* avoid unsafe code, but `map::core::raw` allows it to use `RawTable` buckets.
 #![deny(unsafe_code)]
 #![warn(rust_2018_idioms)]
-#![feature(allocator_api)]
 #![doc(html_root_url = "https://docs.rs/indexmap/1/")]
 #![no_std]
 
@@ -35,11 +34,9 @@
 //! to use alternate hashers:
 //!
 //! ```
-//! #![feature(allocator_api)]
 //! use fnv::FnvBuildHasher;
 //! use fxhash::FxBuildHasher;
-//! use indexmap::{IndexMap, IndexSet};
-//! use std::alloc::Global;
+//! use indexmap::{IndexMap, IndexSet, alloc_inner::Global};
 //!
 //! type FnvIndexMap<K, V> = IndexMap<K, V, Global, FnvBuildHasher>;
 //! type FnvIndexSet<T> = IndexSet<T, Global, FnvBuildHasher>;
@@ -86,9 +83,153 @@ extern crate alloc;
 #[macro_use]
 extern crate std;
 
-use alloc::vec::Vec;
-pub use alloc::{alloc::Global, collections, vec};
-use core::alloc::Allocator;
+pub use hashbrown::raw::alloc::{Allocator, Global};
+
+#[cfg(feature = "nightly")]
+pub mod alloc_inner {
+    #![feature(allocator_api)]
+    pub use alloc::vec::{collections, vec, Drain, IntoIter, Vec};
+}
+
+#[cfg(not(feature = "nightly"))]
+pub mod alloc_inner {
+    pub use super::{Allocator, Global};
+    pub use alloc::{collections, vec};
+    use core::{
+        convert::{AsMut, AsRef},
+        fmt,
+        iter::{FromIterator, IntoIterator, Iterator},
+        marker::PhantomData,
+        ops::{Deref, DerefMut},
+    };
+
+    #[derive(Debug)]
+    pub struct Drain<'a, T, Arena: Allocator = Global>(pub vec::Drain<'a, T>, PhantomData<Arena>);
+    impl<'a, T, Arena: Allocator> From<Drain<'a, T, Arena>> for vec::Drain<'a, T> {
+        fn from(value: Drain<'a, T, Arena>) -> Self {
+            value.0
+        }
+    }
+    impl<'a, T, Arena: Allocator> From<vec::Drain<'a, T>> for Drain<'a, T, Arena> {
+        fn from(value: vec::Drain<'a, T>) -> Self {
+            Self(value, PhantomData)
+        }
+    }
+    impl<'a, T, Arena: Allocator> Deref for Drain<'a, T, Arena> {
+        type Target = vec::Drain<'a, T>;
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+    impl<'a, T, Arena: Allocator> DerefMut for Drain<'a, T, Arena> {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.0
+        }
+    }
+    impl<'a, T, Arena: Allocator> Iterator for Drain<'a, T, Arena> {
+        type Item = T;
+        fn next(&mut self) -> Option<T> {
+            self.0.next()
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct IntoIter<T, Arena: Allocator = Global>(pub vec::IntoIter<T>, PhantomData<Arena>);
+    impl<T, Arena: Allocator> From<IntoIter<T, Arena>> for vec::IntoIter<T> {
+        fn from(value: IntoIter<T, Arena>) -> Self {
+            value.0
+        }
+    }
+    impl<T, Arena: Allocator> From<vec::IntoIter<T>> for IntoIter<T, Arena> {
+        fn from(value: vec::IntoIter<T>) -> Self {
+            let collected: vec::Vec<_> = value.into_iter().collect();
+            Self(collected.into_iter(), PhantomData)
+        }
+    }
+    impl<T, Arena: Allocator> From<Drain<'_, T, Arena>> for IntoIter<T, Arena> {
+        fn from(value: Drain<'_, T, Arena>) -> Self {
+            let collected: vec::Vec<T> = value.0.into_iter().collect();
+            Self(collected.into_iter(), PhantomData)
+        }
+    }
+    impl<T, Arena: Allocator> Deref for IntoIter<T, Arena> {
+        type Target = vec::IntoIter<T>;
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+    impl<T, Arena: Allocator> DerefMut for IntoIter<T, Arena> {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.0
+        }
+    }
+    impl<T, Arena: Allocator> Iterator for IntoIter<T, Arena> {
+        type Item = T;
+        fn next(&mut self) -> Option<T> {
+            self.0.next()
+        }
+    }
+
+    #[derive(Clone)]
+    pub struct Vec<T, Arena: Allocator = Global>(pub vec::Vec<T>, PhantomData<Arena>);
+    impl<T, Arena: Allocator> Vec<T, Arena> {
+        pub fn with_capacity_in(capacity: usize, _arena: Arena) -> Self {
+            vec::Vec::with_capacity(capacity).into()
+        }
+        pub fn new_in(_arena: Arena) -> Self {
+            vec::Vec::new().into()
+        }
+    }
+    impl<T, Arena: Allocator> From<Vec<T, Arena>> for vec::Vec<T> {
+        fn from(value: Vec<T, Arena>) -> Self {
+            value.0
+        }
+    }
+    impl<T, Arena: Allocator> From<vec::Vec<T>> for Vec<T, Arena> {
+        fn from(value: vec::Vec<T>) -> Self {
+            Self(value, PhantomData)
+        }
+    }
+    impl<T, Arena: Allocator> Deref for Vec<T, Arena> {
+        type Target = vec::Vec<T>;
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+    impl<T, Arena: Allocator> DerefMut for Vec<T, Arena> {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.0
+        }
+    }
+    impl<T, Arena: Allocator> AsRef<vec::Vec<T>> for Vec<T, Arena> {
+        fn as_ref(&self) -> &vec::Vec<T> {
+            &self.0
+        }
+    }
+    impl<T, Arena: Allocator> AsMut<vec::Vec<T>> for Vec<T, Arena> {
+        fn as_mut(&mut self) -> &mut vec::Vec<T> {
+            &mut self.0
+        }
+    }
+    impl<T> FromIterator<T> for Vec<T, Global> {
+        fn from_iter<I: IntoIterator<Item = T>>(iterable: I) -> Self {
+            vec::Vec::from_iter::<I>(iterable).into()
+        }
+    }
+    impl<T: Eq, Arena: Allocator> PartialEq for Vec<T, Arena> {
+        fn eq(&self, other: &Self) -> bool {
+            self.0.eq(&other.0)
+        }
+    }
+    impl<T: Eq, Arena: Allocator> Eq for Vec<T, Arena> {}
+    impl<T: fmt::Debug, Arena: Allocator> fmt::Debug for Vec<T, Arena> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            let slice: &[T] = self.0.as_ref();
+            write!(f, "{:?}", slice)
+        }
+    }
+}
+use alloc_inner::Vec;
 
 #[macro_use]
 mod macros;
@@ -187,7 +328,7 @@ impl<K, V> Bucket<K, V> {
     }
 }
 
-trait Entries<Arena: Allocator> {
+trait Entries<Arena: alloc_inner::Allocator> {
     type Entry;
     fn into_entries(self) -> Vec<Self::Entry, Arena>;
     fn as_entries(&self) -> &[Self::Entry];
