@@ -1,3 +1,5 @@
+#![feature(allocator_api)]
+
 use indexmap::{alloc_inner::Allocator, IndexMap, IndexSet};
 use itertools::Itertools;
 

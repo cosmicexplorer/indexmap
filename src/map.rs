@@ -1857,7 +1857,7 @@ mod tests {
         map.extend(vec![(5, 6)]);
         assert_eq!(
             map.into_iter().collect::<Vec<_>>(),
-            vec![(1, 2), (3, 4), (5, 6)].into()
+            vec![(1, 2), (3, 4), (5, 6)]
         );
     }
 

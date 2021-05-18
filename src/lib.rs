@@ -3,6 +3,7 @@
 #![warn(rust_2018_idioms)]
 #![doc(html_root_url = "https://docs.rs/indexmap/1/")]
 #![no_std]
+#![feature(allocator_api)]
 
 //! [`IndexMap`] is a hash table where the iteration order of the key-value
 //! pairs is independent of the hash values of the keys.
@@ -34,6 +35,7 @@
 //! to use alternate hashers:
 //!
 //! ```
+//! #![feature(allocator_api)]
 //! use fnv::FnvBuildHasher;
 //! use fxhash::FxBuildHasher;
 //! use indexmap::{IndexMap, IndexSet, alloc_inner::Global};
@@ -87,8 +89,11 @@ pub use hashbrown::raw::alloc::{Allocator, Global};
 
 #[cfg(feature = "nightly")]
 pub mod alloc_inner {
-    #![feature(allocator_api)]
-    pub use alloc::vec::{collections, vec, Drain, IntoIter, Vec};
+    pub use super::{Allocator, Global};
+    pub use alloc::{
+        collections,
+        vec::{self, Drain, IntoIter, Vec},
+    };
 }
 
 #[cfg(not(feature = "nightly"))]

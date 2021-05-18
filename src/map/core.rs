@@ -111,7 +111,7 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IndexMapCore")
             .field("indices", &raw::DebugIndices(&self.indices))
-            .field("entries", &self.entries.as_ref())
+            .field("entries", &self.entries)
             .finish()
     }
 }
@@ -473,7 +473,8 @@ where
     fn rebuild_hash_table(&mut self) {
         self.indices.clear();
         debug_assert!(self.indices.capacity() >= self.entries.len());
-        for (i, entry) in enumerate(self.entries.as_mut()) {
+
+        for (i, entry) in self.entries.iter_mut().enumerate() {
             // We should never have to reallocate, so there's no need for a real hasher.
             unsafe {
                 self.indices.insert_no_grow(entry.hash.get(), i);

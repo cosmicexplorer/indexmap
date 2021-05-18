@@ -1781,7 +1781,7 @@ mod tests {
         set.extend(vec![5, 6]);
         assert_eq!(
             set.into_iter().collect::<Vec<_>>(),
-            vec![1, 2, 3, 4, 5, 6].into()
+            vec![1, 2, 3, 4, 5, 6]
         );
     }
 
