@@ -1,6 +1,7 @@
 // We *mostly* avoid unsafe code, but `map::core::raw` allows it to use `RawTable` buckets.
 #![deny(unsafe_code)]
 #![warn(rust_2018_idioms)]
+#![feature(allocator_api)]
 #![doc(html_root_url = "https://docs.rs/indexmap/1/")]
 #![no_std]
 
@@ -67,7 +68,7 @@
 //! trigger this. It can be tested by building for a std-less target.
 //!
 //! - Creating maps and sets using [`new`][IndexMap::new] and
-//! [`with_capacity`][IndexMap::with_capacity] is unavailable without `std`.  
+//! [`with_capacity`][IndexMap::with_capacity] is unavailable without `std`.
 //!   Use methods [`IndexMap::default`][def],
 //!   [`with_hasher`][IndexMap::with_hasher],
 //!   [`with_capacity_and_hasher`][IndexMap::with_capacity_and_hasher] instead.
@@ -83,7 +84,11 @@ extern crate alloc;
 #[macro_use]
 extern crate std;
 
-use alloc::vec::{self, Vec};
+use alloc::{
+    alloc::Global,
+    vec::{self, Vec},
+};
+use core::alloc::Allocator;
 
 #[macro_use]
 mod macros;
@@ -182,9 +187,9 @@ impl<K, V> Bucket<K, V> {
     }
 }
 
-trait Entries {
+trait Entries<Arena: Allocator> {
     type Entry;
-    fn into_entries(self) -> Vec<Self::Entry>;
+    fn into_entries(self) -> Vec<Self::Entry, Arena>;
     fn as_entries(&self) -> &[Self::Entry];
     fn as_entries_mut(&mut self) -> &mut [Self::Entry];
     fn with_entries<F>(&mut self, f: F)

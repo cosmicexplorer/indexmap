@@ -1,6 +1,6 @@
 use core::hash::{BuildHasher, Hash};
 
-use super::{Equivalent, IndexMap};
+use super::{Allocator, Equivalent, IndexMap};
 
 pub struct PrivateMarker {}
 
@@ -48,9 +48,10 @@ pub trait MutableKeys {
 /// Opt-in mutable access to keys.
 ///
 /// See [`MutableKeys`](trait.MutableKeys.html) for more information.
-impl<K, V, S> MutableKeys for IndexMap<K, V, S>
+impl<K, V, Arena, S> MutableKeys for IndexMap<K, V, Arena, S>
 where
     K: Eq + Hash,
+    Arena: Allocator + Clone,
     S: BuildHasher,
 {
     type Key = K;

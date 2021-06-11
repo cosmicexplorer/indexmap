@@ -12,6 +12,7 @@ mod raw;
 use hashbrown::raw::RawTable;
 
 use crate::vec::{Drain, Vec};
+use crate::Allocator;
 use core::cmp;
 use core::fmt;
 use core::mem::replace;
@@ -22,11 +23,19 @@ use crate::util::{enumerate, simplify_range};
 use crate::{Bucket, Entries, HashValue};
 
 /// Core of the map that does not depend on S
-pub(crate) struct IndexMapCore<K, V> {
+pub(crate) struct IndexMapCore<K, V, Arena: Allocator + Clone> {
     /// indices mapping from the entry hash to its index.
-    indices: RawTable<usize>,
+    indices: RawTable<usize, Arena>,
     /// entries is a dense vec of entries in their order.
-    entries: Vec<Bucket<K, V>>,
+    entries: Vec<Bucket<K, V>, Arena>,
+    /// ???
+    arena: Arena,
+}
+
+impl<K, V, Arena: Allocator + Clone> IndexMapCore<K, V, Arena> {
+    pub fn arena(&self) -> Arena {
+        self.arena.clone()
+    }
 }
 
 #[inline(always)]
@@ -43,28 +52,42 @@ fn equivalent<'a, K, V, Q: ?Sized + Equivalent<K>>(
 }
 
 #[inline]
-fn erase_index(table: &mut RawTable<usize>, hash: HashValue, index: usize) {
+fn erase_index<Arena: Allocator + Clone>(
+    table: &mut RawTable<usize, Arena>,
+    hash: HashValue,
+    index: usize,
+) {
     table.erase_entry(hash.get(), move |&i| i == index);
 }
 
 #[inline]
-fn update_index(table: &mut RawTable<usize>, hash: HashValue, old: usize, new: usize) {
+fn update_index<Arena: Allocator + Clone>(
+    table: &mut RawTable<usize, Arena>,
+    hash: HashValue,
+    old: usize,
+    new: usize,
+) {
     let index = table
         .get_mut(hash.get(), move |&i| i == old)
         .expect("index not found");
     *index = new;
 }
 
-impl<K, V> Clone for IndexMapCore<K, V>
+impl<K, V, Arena> Clone for IndexMapCore<K, V, Arena>
 where
     K: Clone,
     V: Clone,
+    Arena: Allocator + Clone,
 {
     fn clone(&self) -> Self {
         let indices = self.indices.clone();
-        let mut entries = Vec::with_capacity(indices.capacity());
+        let mut entries = Vec::with_capacity_in(indices.capacity(), self.arena.clone());
         entries.clone_from(&self.entries);
-        IndexMapCore { indices, entries }
+        IndexMapCore {
+            indices,
+            entries,
+            arena: self.arena.clone(),
+        }
     }
 
     fn clone_from(&mut self, other: &Self) {
@@ -78,10 +101,11 @@ where
     }
 }
 
-impl<K, V> fmt::Debug for IndexMapCore<K, V>
+impl<K, V, Arena> fmt::Debug for IndexMapCore<K, V, Arena>
 where
     K: fmt::Debug,
     V: fmt::Debug,
+    Arena: Allocator + Clone,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IndexMapCore")
@@ -91,11 +115,14 @@ where
     }
 }
 
-impl<K, V> Entries for IndexMapCore<K, V> {
+impl<K, V, Arena> Entries<Arena> for IndexMapCore<K, V, Arena>
+where
+    Arena: Allocator + Clone,
+{
     type Entry = Bucket<K, V>;
 
     #[inline]
-    fn into_entries(self) -> Vec<Self::Entry> {
+    fn into_entries(self) -> Vec<Self::Entry, Arena> {
         self.entries
     }
 
@@ -118,20 +145,25 @@ impl<K, V> Entries for IndexMapCore<K, V> {
     }
 }
 
-impl<K, V> IndexMapCore<K, V> {
+impl<K, V, Arena> IndexMapCore<K, V, Arena>
+where
+    Arena: Allocator + Clone,
+{
     #[inline]
-    pub(crate) const fn new() -> Self {
+    pub(crate) const fn new(arena: Arena) -> Self {
         IndexMapCore {
-            indices: RawTable::new(),
-            entries: Vec::new(),
+            indices: RawTable::new_in(arena.clone()),
+            entries: Vec::new_in(arena.clone()),
+            arena,
         }
     }
 
     #[inline]
-    pub(crate) fn with_capacity(n: usize) -> Self {
+    pub(crate) fn with_capacity(n: usize, arena: Arena) -> Self {
         IndexMapCore {
-            indices: RawTable::with_capacity(n),
-            entries: Vec::with_capacity(n),
+            indices: RawTable::with_capacity_in(n, arena.clone()),
+            entries: Vec::with_capacity_in(n, arena.clone()),
+            arena,
         }
     }
 
@@ -157,7 +189,7 @@ impl<K, V> IndexMapCore<K, V> {
         }
     }
 
-    pub(crate) fn drain<R>(&mut self, range: R) -> Drain<'_, Bucket<K, V>>
+    pub(crate) fn drain<R>(&mut self, range: R) -> Drain<'_, Bucket<K, V>, Arena>
     where
         R: RangeBounds<usize>,
     {
@@ -184,11 +216,15 @@ impl<K, V> IndexMapCore<K, V> {
         self.erase_indices(at, self.entries.len());
         let entries = self.entries.split_off(at);
 
-        let mut indices = RawTable::with_capacity(entries.len());
+        let mut indices = RawTable::with_capacity_in(entries.len(), self.arena.clone());
         for (i, entry) in enumerate(&entries) {
             indices.insert_no_grow(entry.hash.get(), i);
         }
-        Self { indices, entries }
+        Self {
+            indices,
+            entries,
+            arena: self.arena.clone(),
+        }
     }
 
     /// Reserve capacity for `additional` more key-value pairs.
@@ -450,14 +486,14 @@ impl<K, V> IndexMapCore<K, V> {
 
 /// Entry for an existing key-value pair or a vacant location to
 /// insert one.
-pub enum Entry<'a, K, V> {
+pub enum Entry<'a, K, V, Arena: Allocator + Clone> {
     /// Existing slot with equivalent key.
-    Occupied(OccupiedEntry<'a, K, V>),
+    Occupied(OccupiedEntry<'a, K, V, Arena>),
     /// Vacant slot (no equivalent key in the map).
-    Vacant(VacantEntry<'a, K, V>),
+    Vacant(VacantEntry<'a, K, V, Arena>),
 }
 
-impl<'a, K, V> Entry<'a, K, V> {
+impl<'a, K, V, Arena: Allocator + Clone> Entry<'a, K, V, Arena> {
     /// Inserts the given default value in the entry if it is vacant and returns a mutable
     /// reference to it. Otherwise a mutable reference to an already existent value is returned.
     ///
@@ -547,7 +583,7 @@ impl<'a, K, V> Entry<'a, K, V> {
     }
 }
 
-impl<K: fmt::Debug, V: fmt::Debug> fmt::Debug for Entry<'_, K, V> {
+impl<K: fmt::Debug, V: fmt::Debug, Arena: Allocator + Clone> fmt::Debug for Entry<'_, K, V, Arena> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Entry::Vacant(ref v) => f.debug_tuple(stringify!(Entry)).field(v).finish(),
@@ -559,7 +595,7 @@ impl<K: fmt::Debug, V: fmt::Debug> fmt::Debug for Entry<'_, K, V> {
 pub use self::raw::OccupiedEntry;
 
 // Extra methods that don't threaten the unsafe encapsulation.
-impl<K, V> OccupiedEntry<'_, K, V> {
+impl<K, V, Arena: Allocator + Clone> OccupiedEntry<'_, K, V, Arena> {
     /// Sets the value of the entry to `value`, and returns the entry's old value.
     pub fn insert(&mut self, value: V) -> V {
         replace(self.get_mut(), value)
@@ -602,7 +638,9 @@ impl<K, V> OccupiedEntry<'_, K, V> {
     }
 }
 
-impl<K: fmt::Debug, V: fmt::Debug> fmt::Debug for OccupiedEntry<'_, K, V> {
+impl<K: fmt::Debug, V: fmt::Debug, Arena: Allocator + Clone> fmt::Debug
+    for OccupiedEntry<'_, K, V, Arena>
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct(stringify!(OccupiedEntry))
             .field("key", self.key())
@@ -615,13 +653,13 @@ impl<K: fmt::Debug, V: fmt::Debug> fmt::Debug for OccupiedEntry<'_, K, V> {
 /// It is part of the [`Entry`] enum.
 ///
 /// [`Entry`]: enum.Entry.html
-pub struct VacantEntry<'a, K, V> {
-    map: &'a mut IndexMapCore<K, V>,
+pub struct VacantEntry<'a, K, V, Arena: Allocator + Clone> {
+    map: &'a mut IndexMapCore<K, V, Arena>,
     hash: HashValue,
     key: K,
 }
 
-impl<'a, K, V> VacantEntry<'a, K, V> {
+impl<'a, K, V, Arena: Allocator + Clone> VacantEntry<'a, K, V, Arena> {
     /// Gets a reference to the key that was used to find the entry.
     pub fn key(&self) -> &K {
         &self.key
@@ -645,7 +683,7 @@ impl<'a, K, V> VacantEntry<'a, K, V> {
     }
 }
 
-impl<K: fmt::Debug, V> fmt::Debug for VacantEntry<'_, K, V> {
+impl<K: fmt::Debug, V, Arena: Allocator + Clone> fmt::Debug for VacantEntry<'_, K, V, Arena> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple(stringify!(VacantEntry))
             .field(self.key())
@@ -656,6 +694,6 @@ impl<K: fmt::Debug, V> fmt::Debug for VacantEntry<'_, K, V> {
 #[test]
 fn assert_send_sync() {
     fn assert_send_sync<T: Send + Sync>() {}
-    assert_send_sync::<IndexMapCore<i32, i32>>();
-    assert_send_sync::<Entry<'_, i32, i32>>();
+    assert_send_sync::<IndexMapCore<i32, i32, Global>>();
+    assert_send_sync::<Entry<'_, i32, i32, Global>>();
 }

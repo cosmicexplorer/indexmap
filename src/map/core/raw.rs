@@ -2,15 +2,15 @@
 //! This module encapsulates the `unsafe` access to `hashbrown::raw::RawTable`,
 //! mostly in dealing with its bucket "pointers".
 
-use super::{equivalent, Entry, HashValue, IndexMapCore, VacantEntry};
+use super::{super::Allocator, equivalent, Entry, HashValue, IndexMapCore, VacantEntry};
 use core::fmt;
 use core::mem::replace;
 use hashbrown::raw::RawTable;
 
 type RawBucket = hashbrown::raw::Bucket<usize>;
 
-pub(super) struct DebugIndices<'a>(pub &'a RawTable<usize>);
-impl fmt::Debug for DebugIndices<'_> {
+pub(super) struct DebugIndices<'a, Arena: Allocator + Clone>(pub &'a RawTable<usize, Arena>);
+impl<Arena: Allocator + Clone> fmt::Debug for DebugIndices<'_, Arena> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // SAFETY: we're not letting any of the buckets escape this function
         let indices = unsafe { self.0.iter().map(|raw_bucket| raw_bucket.read()) };
@@ -18,7 +18,7 @@ impl fmt::Debug for DebugIndices<'_> {
     }
 }
 
-impl<K, V> IndexMapCore<K, V> {
+impl<K, V, Arena: Allocator + Clone> IndexMapCore<K, V, Arena> {
     /// Sweep the whole table to erase indices start..end
     pub(super) fn erase_indices_sweep(&mut self, start: usize, end: usize) {
         // SAFETY: we're not letting any of the buckets escape this function
@@ -35,7 +35,7 @@ impl<K, V> IndexMapCore<K, V> {
         }
     }
 
-    pub(crate) fn entry(&mut self, hash: HashValue, key: K) -> Entry<'_, K, V>
+    pub(crate) fn entry(&mut self, hash: HashValue, key: K) -> Entry<'_, K, V, Arena>
     where
         K: Eq,
     {
@@ -92,18 +92,18 @@ impl<K, V> IndexMapCore<K, V> {
 /// [`Entry`]: enum.Entry.html
 // SAFETY: The lifetime of the map reference also constrains the raw bucket,
 // which is essentially a raw pointer into the map indices.
-pub struct OccupiedEntry<'a, K, V> {
-    map: &'a mut IndexMapCore<K, V>,
+pub struct OccupiedEntry<'a, K, V, Arena: Allocator + Clone> {
+    map: &'a mut IndexMapCore<K, V, Arena>,
     raw_bucket: RawBucket,
     key: K,
 }
 
 // `hashbrown::raw::Bucket` is only `Send`, not `Sync`.
 // SAFETY: `&self` only accesses the bucket to read it.
-unsafe impl<K: Sync, V: Sync> Sync for OccupiedEntry<'_, K, V> {}
+unsafe impl<K: Sync, V: Sync, Arena: Allocator + Clone> Sync for OccupiedEntry<'_, K, V, Arena> {}
 
 // The parent module also adds methods that don't threaten the unsafe encapsulation.
-impl<'a, K, V> OccupiedEntry<'a, K, V> {
+impl<'a, K, V, Arena: Allocator + Clone> OccupiedEntry<'a, K, V, Arena> {
     /// Gets a reference to the entry's key in the map.
     ///
     /// Note that this is not the key that was used to find the entry. There may be an observable
