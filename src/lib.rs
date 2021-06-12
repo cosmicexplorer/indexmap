@@ -84,8 +84,8 @@ extern crate alloc;
 #[macro_use]
 extern crate std;
 
-pub use alloc::vec;
 use alloc::{alloc::Global, vec::Vec};
+pub use alloc::{collections, vec};
 use core::alloc::Allocator;
 
 #[macro_use]
