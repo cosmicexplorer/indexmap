@@ -1458,9 +1458,10 @@ where
     }
 }
 
-impl<K, V, S> FromIterator<(K, V)> for IndexMap<K, V, Global, S>
+impl<K, V, Arena, S> FromIterator<(K, V)> for IndexMap<K, V, Arena, S>
 where
     K: Hash + Eq,
+    Arena: Allocator + Clone + Default,
     S: BuildHasher + Default,
 {
     /// Create an `IndexMap` from the sequence of key-value pairs in the
@@ -1469,9 +1470,10 @@ where
     /// `from_iter` uses the same logic as `extend`. See
     /// [`extend`](#method.extend) for more details.
     fn from_iter<I: IntoIterator<Item = (K, V)>>(iterable: I) -> Self {
+        let arena = Arena::default();
         let iter = iterable.into_iter();
         let (low, _) = iter.size_hint();
-        let mut map = Self::with_capacity_and_hasher(low, <_>::default());
+        let mut map = Self::with_capacity_and_hasher_in(low, <_>::default(), arena);
         map.extend(iter);
         map
     }
@@ -1546,13 +1548,14 @@ where
     }
 }
 
-impl<K, V, S> Default for IndexMap<K, V, Global, S>
+impl<K, V, Arena, S> Default for IndexMap<K, V, Arena, S>
 where
+    Arena: Allocator + Clone + Default,
     S: Default,
 {
     /// Return an empty `IndexMap`
     fn default() -> Self {
-        Self::with_capacity_and_hasher(0, S::default())
+        Self::with_capacity_and_hasher_in(0, S::default(), Arena::default())
     }
 }
 

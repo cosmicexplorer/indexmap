@@ -967,9 +967,10 @@ where
     }
 }
 
-impl<T, S> FromIterator<T> for IndexSet<T, Global, S>
+impl<T, Arena, S> FromIterator<T> for IndexSet<T, Arena, S>
 where
     T: Hash + Eq,
+    Arena: Allocator + Clone + Default,
     S: BuildHasher + Default,
 {
     fn from_iter<I: IntoIterator<Item = T>>(iterable: I) -> Self {
@@ -1024,8 +1025,9 @@ where
     }
 }
 
-impl<T, S> Default for IndexSet<T, Global, S>
+impl<T, Arena, S> Default for IndexSet<T, Arena, S>
 where
+    Arena: Allocator + Clone + Default,
     S: Default,
 {
     /// Return an empty `IndexSet`

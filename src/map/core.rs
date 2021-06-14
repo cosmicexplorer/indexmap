@@ -694,6 +694,6 @@ impl<K: fmt::Debug, V, Arena: Allocator + Clone> fmt::Debug for VacantEntry<'_, 
 #[test]
 fn assert_send_sync() {
     fn assert_send_sync<T: Send + Sync>() {}
-    assert_send_sync::<IndexMapCore<i32, i32, Global>>();
-    assert_send_sync::<Entry<'_, i32, i32, Global>>();
+    assert_send_sync::<IndexMapCore<i32, i32, crate::Global>>();
+    assert_send_sync::<Entry<'_, i32, i32, crate::Global>>();
 }

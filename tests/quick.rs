@@ -1,5 +1,8 @@
+#![feature(allocator_api)]
+
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
+use std::alloc::Allocator;
 
 use quickcheck::quickcheck;
 use quickcheck::Arbitrary;
@@ -9,7 +12,7 @@ use quickcheck::TestResult;
 use fnv::FnvHasher;
 use std::hash::{BuildHasher, BuildHasherDefault};
 type FnvBuilder = BuildHasherDefault<FnvHasher>;
-type IndexMapFnv<K, V> = IndexMap<K, V, FnvBuilder>;
+type IndexMapFnv<K, V, Arena> = IndexMap<K, V, Arena, FnvBuilder>;
 
 use std::cmp::min;
 use std::collections::HashMap;
@@ -208,10 +211,11 @@ where
     }
 }
 
-fn do_ops<K, V, S>(ops: &[Op<K, V>], a: &mut IndexMap<K, V, S>, b: &mut HashMap<K, V>)
+fn do_ops<K, V, Arena, S>(ops: &[Op<K, V>], a: &mut IndexMap<K, V, Arena, S>, b: &mut HashMap<K, V>)
 where
     K: Hash + Eq + Clone,
     V: Clone,
+    Arena: Allocator + Clone,
     S: BuildHasher,
 {
     for op in ops {
@@ -241,10 +245,12 @@ where
     }
 }
 
-fn assert_maps_equivalent<K, V>(a: &IndexMap<K, V>, b: &HashMap<K, V>) -> bool
+fn assert_maps_equivalent<K, V, Arena, S>(a: &IndexMap<K, V, Arena, S>, b: &HashMap<K, V>) -> bool
 where
     K: Hash + Eq + Debug,
     V: Eq + Debug,
+    Arena: Allocator + Clone + Default,
+    S: BuildHasher + Default,
 {
     assert_eq!(a.len(), b.len());
     assert_eq!(a.iter().next().is_some(), b.iter().next().is_some());

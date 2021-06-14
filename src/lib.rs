@@ -35,15 +35,17 @@
 //! to use alternate hashers:
 //!
 //! ```
+//! #![feature(allocator_api)]
 //! use fnv::FnvBuildHasher;
 //! use fxhash::FxBuildHasher;
 //! use indexmap::{IndexMap, IndexSet};
+//! use std::alloc::Global;
 //!
-//! type FnvIndexMap<K, V> = IndexMap<K, V, FnvBuildHasher>;
-//! type FnvIndexSet<T> = IndexSet<T, FnvBuildHasher>;
+//! type FnvIndexMap<K, V> = IndexMap<K, V, Global, FnvBuildHasher>;
+//! type FnvIndexSet<T> = IndexSet<T, Global, FnvBuildHasher>;
 //!
-//! type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
-//! type FxIndexSet<T> = IndexSet<T, FxBuildHasher>;
+//! type FxIndexMap<K, V> = IndexMap<K, V, Global, FxBuildHasher>;
+//! type FxIndexSet<T> = IndexSet<T, Global, FxBuildHasher>;
 //!
 //! let std: IndexSet<i32> = (0..100).collect();
 //! let fnv: FnvIndexSet<i32> = (0..100).collect();
