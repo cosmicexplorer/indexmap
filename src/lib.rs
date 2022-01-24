@@ -234,7 +234,7 @@ pub mod alloc_inner {
         }
     }
 }
-use alloc_inner::Vec;
+pub use alloc_inner::Vec;
 
 #[macro_use]
 mod macros;
