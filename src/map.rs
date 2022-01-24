@@ -299,9 +299,8 @@ where
 
     /// Return an owning iterator over the keys of the map, in their order
     pub fn into_keys(self) -> IntoKeys<K, V, Arena> {
-        IntoKeys {
-            iter: self.into_entries().into_iter().into(),
-        }
+        let iter = alloc_inner::vec::Vec::into_iter(self.into_entries().into());
+        IntoKeys { iter: iter.into() }
     }
 
     /// Return an iterator over the values of the map, in their order
@@ -321,9 +320,8 @@ where
 
     /// Return an owning iterator over the values of the map, in their order
     pub fn into_values(self) -> IntoValues<K, V, Arena> {
-        IntoValues {
-            iter: self.into_entries().into_iter().into(),
-        }
+        let iter = alloc_inner::vec::Vec::into_iter(self.into_entries().into());
+        IntoValues { iter: iter.into() }
     }
 
     /// Remove all key-value pairs in the map, while preserving its capacity.
@@ -818,9 +816,8 @@ where
     {
         let mut entries = self.into_entries();
         entries.sort_unstable_by(move |a, b| cmp(&a.key, &a.value, &b.key, &b.value));
-        IntoIter {
-            iter: entries.into_iter().into(),
-        }
+        let iter = alloc_inner::vec::Vec::into_iter(entries.into());
+        IntoIter { iter: iter.into() }
     }
 
     /// Reverses the order of the map’s key-value pairs in place.
