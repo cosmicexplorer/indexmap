@@ -185,6 +185,14 @@ pub mod alloc_inner {
             vec::Vec::new().into()
         }
     }
+    impl<T> Vec<T, Global> {
+        pub fn with_capacity(capacity: usize) -> Self {
+            vec::Vec::with_capacity(capacity).into()
+        }
+        pub fn new() -> Self {
+            vec::Vec::new().into()
+        }
+    }
     impl<T, Arena: Allocator> From<Vec<T, Arena>> for vec::Vec<T> {
         fn from(value: Vec<T, Arena>) -> Self {
             value.0
