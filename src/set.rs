@@ -173,7 +173,7 @@ impl<T, S> IndexSet<T, Global, S> {
     ///
     /// This function is `const`, so it
     /// can be called in `static` contexts.
-    pub const fn with_hasher(hash_builder: S) -> Self {
+    pub fn with_hasher(hash_builder: S) -> Self {
         IndexSet {
             map: IndexMap::with_hasher(hash_builder),
         }
@@ -677,7 +677,7 @@ where
 
     /// Sort the values of the set and return a by-value iterator of
     /// the values with the result.
-    pub fn sorted_unstable_by<F>(self, mut cmp: F) -> IntoIter<T>
+    pub fn sorted_unstable_by<F>(self, mut cmp: F) -> IntoIter<T, Arena>
     where
         F: FnMut(&T, &T) -> Ordering,
     {
@@ -984,7 +984,7 @@ where
 impl<T, Arena, const N: usize> From<[T; N]> for IndexSet<T, Arena, RandomState>
 where
     T: Eq + Hash,
-    Arena: Allocator + Clone,
+    Arena: Allocator + Clone + Default,
 {
     /// # Examples
     ///
@@ -1309,9 +1309,10 @@ where
     }
 }
 
-impl<T, S1, S2> FusedIterator for SymmetricDifference<'_, T, S1, S2>
+impl<T, Arena, S1, S2> FusedIterator for SymmetricDifference<'_, T, S1, S2, Arena>
 where
     T: Eq + Hash,
+    Arena: Allocator + Clone,
     S1: BuildHasher,
     S2: BuildHasher,
 {
@@ -1393,9 +1394,10 @@ where
     }
 }
 
-impl<T, S> FusedIterator for Union<'_, T, S>
+impl<T, Arena, S> FusedIterator for Union<'_, T, Arena, S>
 where
     T: Eq + Hash,
+    Arena: Allocator + Clone,
     S: BuildHasher,
 {
 }
@@ -1781,7 +1783,7 @@ mod tests {
         set.extend(vec![5, 6]);
         assert_eq!(
             set.into_iter().collect::<Vec<_>>(),
-            vec![1, 2, 3, 4, 5, 6]
+            vec![1, 2, 3, 4, 5, 6].into()
         );
     }
 

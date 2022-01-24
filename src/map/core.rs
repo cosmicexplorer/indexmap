@@ -151,7 +151,7 @@ where
     Arena: Allocator + Clone,
 {
     #[inline]
-    pub(crate) const fn new(arena: Arena) -> Self {
+    pub(crate) fn new(arena: Arena) -> Self {
         IndexMapCore {
             indices: RawTable::new_in(arena.clone()),
             entries: Vec::new_in(arena.clone()),

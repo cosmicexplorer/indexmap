@@ -193,7 +193,7 @@ impl<K, V, S> IndexMap<K, V, Global, S> {
     ///
     /// This function is `const`, so it
     /// can be called in `static` contexts.
-    pub const fn with_hasher(hash_builder: S) -> Self {
+    pub fn with_hasher(hash_builder: S) -> Self {
         IndexMap {
             core: IndexMapCore::new(Global),
             hash_builder,
@@ -298,9 +298,9 @@ where
     }
 
     /// Return an owning iterator over the keys of the map, in their order
-    pub fn into_keys(self) -> IntoKeys<K, V> {
+    pub fn into_keys(self) -> IntoKeys<K, V, Arena> {
         IntoKeys {
-            iter: self.into_entries().into_iter(),
+            iter: self.into_entries().into_iter().into(),
         }
     }
 
@@ -320,9 +320,9 @@ where
     }
 
     /// Return an owning iterator over the values of the map, in their order
-    pub fn into_values(self) -> IntoValues<K, V> {
+    pub fn into_values(self) -> IntoValues<K, V, Arena> {
         IntoValues {
-            iter: self.into_entries().into_iter(),
+            iter: self.into_entries().into_iter().into(),
         }
     }
 
@@ -812,14 +812,14 @@ where
     ///
     /// The sort is unstable.
     #[inline]
-    pub fn sorted_unstable_by<F>(self, mut cmp: F) -> IntoIter<K, V>
+    pub fn sorted_unstable_by<F>(self, mut cmp: F) -> IntoIter<K, V, Arena>
     where
         F: FnMut(&K, &V, &K, &V) -> Ordering,
     {
         let mut entries = self.into_entries();
         entries.sort_unstable_by(move |a, b| cmp(&a.key, &a.value, &b.key, &b.value));
         IntoIter {
-            iter: entries.into_iter(),
+            iter: entries.into_iter().into(),
         }
     }
 
@@ -966,29 +966,44 @@ impl<K: fmt::Debug, V> fmt::Debug for Keys<'_, K, V> {
 ///
 /// [`IndexMap`]: struct.IndexMap.html
 /// [`into_keys`]: struct.IndexMap.html#method.into_keys
-pub struct IntoKeys<K, V> {
-    iter: vec::IntoIter<Bucket<K, V>>,
+pub struct IntoKeys<K, V, Arena = Global>
+where
+    Arena: Allocator,
+{
+    iter: alloc_inner::IntoIter<Bucket<K, V>, Arena>,
 }
 
-impl<K, V> Iterator for IntoKeys<K, V> {
+impl<K, V, Arena> Iterator for IntoKeys<K, V, Arena>
+where
+    Arena: Allocator,
+{
     type Item = K;
 
     iterator_methods!(Bucket::key);
 }
 
-impl<K, V> DoubleEndedIterator for IntoKeys<K, V> {
+impl<K, V, Arena> DoubleEndedIterator for IntoKeys<K, V, Arena>
+where
+    Arena: Allocator,
+{
     double_ended_iterator_methods!(Bucket::key);
 }
 
-impl<K, V> ExactSizeIterator for IntoKeys<K, V> {
+impl<K, V, Arena> ExactSizeIterator for IntoKeys<K, V, Arena>
+where
+    Arena: Allocator,
+{
     fn len(&self) -> usize {
         self.iter.len()
     }
 }
 
-impl<K, V> FusedIterator for IntoKeys<K, V> {}
+impl<K, V, Arena> FusedIterator for IntoKeys<K, V, Arena> where Arena: Allocator {}
 
-impl<K: fmt::Debug, V> fmt::Debug for IntoKeys<K, V> {
+impl<K: fmt::Debug, V, Arena> fmt::Debug for IntoKeys<K, V, Arena>
+where
+    Arena: Allocator,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let iter = self.iter.as_slice().iter().map(Bucket::key_ref);
         f.debug_list().entries(iter).finish()
@@ -1077,29 +1092,41 @@ impl<K, V> FusedIterator for ValuesMut<'_, K, V> {}
 ///
 /// [`IndexMap`]: struct.IndexMap.html
 /// [`into_values`]: struct.IndexMap.html#method.into_values
-pub struct IntoValues<K, V> {
-    iter: vec::IntoIter<Bucket<K, V>>,
+pub struct IntoValues<K, V, Arena: Allocator = Global> {
+    iter: alloc_inner::IntoIter<Bucket<K, V>, Arena>,
 }
 
-impl<K, V> Iterator for IntoValues<K, V> {
+impl<K, V, Arena> Iterator for IntoValues<K, V, Arena>
+where
+    Arena: Allocator,
+{
     type Item = V;
 
     iterator_methods!(Bucket::value);
 }
 
-impl<K, V> DoubleEndedIterator for IntoValues<K, V> {
+impl<K, V, Arena> DoubleEndedIterator for IntoValues<K, V, Arena>
+where
+    Arena: Allocator,
+{
     double_ended_iterator_methods!(Bucket::value);
 }
 
-impl<K, V> ExactSizeIterator for IntoValues<K, V> {
+impl<K, V, Arena> ExactSizeIterator for IntoValues<K, V, Arena>
+where
+    Arena: Allocator,
+{
     fn len(&self) -> usize {
         self.iter.len()
     }
 }
 
-impl<K, V> FusedIterator for IntoValues<K, V> {}
+impl<K, V, Arena> FusedIterator for IntoValues<K, V, Arena> where Arena: Allocator {}
 
-impl<K, V: fmt::Debug> fmt::Debug for IntoValues<K, V> {
+impl<K, V: fmt::Debug, Arena> fmt::Debug for IntoValues<K, V, Arena>
+where
+    Arena: Allocator,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let iter = self.iter.as_slice().iter().map(Bucket::value_ref);
         f.debug_list().entries(iter).finish()
@@ -1482,7 +1509,7 @@ where
 impl<K, V, Arena, const N: usize> From<[(K, V); N]> for IndexMap<K, V, Arena, RandomState>
 where
     K: Hash + Eq,
-    Arena: Allocator + Clone,
+    Arena: Allocator + Clone + Default,
 {
     /// # Examples
     ///
@@ -1857,7 +1884,7 @@ mod tests {
         map.extend(vec![(5, 6)]);
         assert_eq!(
             map.into_iter().collect::<Vec<_>>(),
-            vec![(1, 2), (3, 4), (5, 6)]
+            vec![(1, 2), (3, 4), (5, 6)].into()
         );
     }
 
