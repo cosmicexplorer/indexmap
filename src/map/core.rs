@@ -16,6 +16,7 @@ use hashbrown::raw::RawTable;
 
 use crate::vec::{self, Vec};
 use crate::TryReserveError;
+use core::alloc::Allocator;
 use core::mem;
 use core::ops::RangeBounds;
 
@@ -25,11 +26,11 @@ use crate::{Bucket, Entries, Equivalent, HashValue};
 pub use entry::{Entry, IndexedEntry, OccupiedEntry, VacantEntry};
 
 /// Core of the map that does not depend on S
-pub(crate) struct IndexMapCore<K, V> {
+pub(crate) struct IndexMapCore<K, V, A: Allocator> {
     /// indices mapping from the entry hash to its index.
-    indices: RawTable<usize>,
+    indices: RawTable<usize, A>,
     /// entries is a dense vec of entries in their order.
-    entries: Vec<Bucket<K, V>>,
+    entries: Vec<Bucket<K, V>, A>,
 }
 
 #[inline(always)]
@@ -46,26 +47,34 @@ fn equivalent<'a, K, V, Q: ?Sized + Equivalent<K>>(
 }
 
 #[inline]
-fn erase_index(table: &mut RawTable<usize>, hash: HashValue, index: usize) {
+fn erase_index<A>(table: &mut RawTable<usize, A>, hash: HashValue, index: usize)
+where
+    A: Allocator,
+{
     let erased = table.erase_entry(hash.get(), move |&i| i == index);
     debug_assert!(erased);
 }
 
 #[inline]
-fn update_index(table: &mut RawTable<usize>, hash: HashValue, old: usize, new: usize) {
+fn update_index<A>(table: &mut RawTable<usize, A>, hash: HashValue, old: usize, new: usize)
+where
+    A: Allocator,
+{
     let index = table
         .get_mut(hash.get(), move |&i| i == old)
         .expect("index not found");
     *index = new;
 }
 
-impl<K, V> Clone for IndexMapCore<K, V>
+impl<K, V, A> Clone for IndexMapCore<K, V, A>
 where
     K: Clone,
     V: Clone,
+    A: Allocator + Clone,
 {
     fn clone(&self) -> Self {
-        let mut new = Self::new();
+        let alloc = self.indices.allocator().clone();
+        let mut new = Self::new_in(alloc);
         new.clone_from(self);
         new
     }
@@ -96,11 +105,15 @@ where
     }
 }
 
-impl<K, V> Entries for IndexMapCore<K, V> {
+impl<K, V, A> Entries for IndexMapCore<K, V, A>
+where
+    A: Allocator,
+{
     type Entry = Bucket<K, V>;
+    type Arena = A;
 
     #[inline]
-    fn into_entries(self) -> Vec<Self::Entry> {
+    fn into_entries(self) -> Vec<Self::Entry, Self::Arena> {
         self.entries
     }
 
@@ -123,23 +136,54 @@ impl<K, V> Entries for IndexMapCore<K, V> {
     }
 }
 
-impl<K, V> IndexMapCore<K, V> {
+impl<K, V, A> IndexMapCore<K, V, A>
+where
+    A: Allocator,
+{
     /// The maximum capacity before the `entries` allocation would exceed `isize::MAX`.
     const MAX_ENTRIES_CAPACITY: usize = (isize::MAX as usize) / mem::size_of::<Bucket<K, V>>();
 
     #[inline]
-    pub(crate) const fn new() -> Self {
+    pub(crate) const fn new_in(alloc: A) -> Self
+    where
+        A: Clone,
+    {
         IndexMapCore {
-            indices: RawTable::new(),
-            entries: Vec::new(),
+            indices: RawTable::new_in(alloc.clone()),
+            entries: Vec::new_in(alloc),
         }
     }
 
     #[inline]
-    pub(crate) fn with_capacity(n: usize) -> Self {
+    pub(crate) const fn new() -> Self
+    where
+        A: Default,
+    {
         IndexMapCore {
-            indices: RawTable::with_capacity(n),
-            entries: Vec::with_capacity(n),
+            indices: RawTable::new_in(A::default()),
+            entries: Vec::new_in(A::default()),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn with_capacity(n: usize) -> Self
+    where
+        A: Default,
+    {
+        IndexMapCore {
+            indices: RawTable::with_capacity_in(n, A::default()),
+            entries: Vec::with_capacity_in(n, A::default()),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn with_capacity_in(n: usize, alloc: A) -> Self
+    where
+        A: Clone,
+    {
+        IndexMapCore {
+            indices: RawTable::with_capacity_in(n, alloc.clone()),
+            entries: Vec::with_capacity_in(n, alloc),
         }
     }
 
@@ -165,7 +209,7 @@ impl<K, V> IndexMapCore<K, V> {
         }
     }
 
-    pub(crate) fn drain<R>(&mut self, range: R) -> vec::Drain<'_, Bucket<K, V>>
+    pub(crate) fn drain<R>(&mut self, range: R) -> vec::Drain<'_, Bucket<K, V>, A>
     where
         R: RangeBounds<usize>,
     {
@@ -175,7 +219,7 @@ impl<K, V> IndexMapCore<K, V> {
     }
 
     #[cfg(feature = "rayon")]
-    pub(crate) fn par_drain<R>(&mut self, range: R) -> rayon::vec::Drain<'_, Bucket<K, V>>
+    pub(crate) fn par_drain<R>(&mut self, range: R) -> rayon::vec::Drain<'_, Bucket<K, V>, A>
     where
         K: Send,
         V: Send,
@@ -187,26 +231,32 @@ impl<K, V> IndexMapCore<K, V> {
         self.entries.par_drain(range)
     }
 
-    pub(crate) fn split_off(&mut self, at: usize) -> Self {
+    pub(crate) fn split_off(&mut self, at: usize) -> Self
+    where
+        A: Clone,
+    {
         assert!(at <= self.entries.len());
+        let alloc = self.indices.allocator().clone();
         self.erase_indices(at, self.entries.len());
         let entries = self.entries.split_off(at);
 
-        let mut indices = RawTable::with_capacity(entries.len());
+        let mut indices = RawTable::with_capacity_in(entries.len(), alloc);
         raw::insert_bulk_no_grow(&mut indices, &entries);
         Self { indices, entries }
     }
 
-    pub(crate) fn split_splice<R>(&mut self, range: R) -> (Self, vec::IntoIter<Bucket<K, V>>)
+    pub(crate) fn split_splice<R>(&mut self, range: R) -> (Self, vec::IntoIter<Bucket<K, V>, A>)
     where
         R: RangeBounds<usize>,
+        A: Clone,
     {
         let range = simplify_range(range, self.len());
+        let alloc = self.indices.allocator().clone();
         self.erase_indices(range.start, self.entries.len());
         let entries = self.entries.split_off(range.end);
         let drained = self.entries.split_off(range.start);
 
-        let mut indices = RawTable::with_capacity(entries.len());
+        let mut indices = RawTable::with_capacity_in(entries.len(), alloc);
         raw::insert_bulk_no_grow(&mut indices, &entries);
         (Self { indices, entries }, drained.into_iter())
     }

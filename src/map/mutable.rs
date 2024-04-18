@@ -1,3 +1,4 @@
+use core::alloc::Allocator;
 use core::hash::{BuildHasher, Hash};
 
 use super::{Bucket, Entries, Equivalent, IndexMap};
@@ -49,9 +50,10 @@ pub trait MutableKeys: private::Sealed {
 /// Opt-in mutable access to [`IndexMap`] keys.
 ///
 /// See [`MutableKeys`] for more information.
-impl<K, V, S> MutableKeys for IndexMap<K, V, S>
+impl<K, V, S, A> MutableKeys for IndexMap<K, V, S, A>
 where
     S: BuildHasher,
+    A: Allocator,
 {
     type Key = K;
     type Value = V;
@@ -83,5 +85,5 @@ where
 mod private {
     pub trait Sealed {}
 
-    impl<K, V, S> Sealed for super::IndexMap<K, V, S> {}
+    impl<K, V, S, A> Sealed for super::IndexMap<K, V, S, A> where A: ::core::alloc::Allocator {}
 }

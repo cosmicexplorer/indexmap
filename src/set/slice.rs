@@ -1,8 +1,12 @@
-use super::{Bucket, Entries, IndexSet, IntoIter, Iter};
+use super::{
+    Bucket, Entries, IndexSet, Iter,
+    /* IntoIter, */
+};
 use crate::util::try_simplify_range;
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+use core::alloc::Allocator;
 use core::cmp::Ordering;
 use core::fmt;
 use core::hash::{Hash, Hasher};
@@ -28,17 +32,19 @@ impl<T> Slice<T> {
         unsafe { &*(entries as *const [Bucket<T>] as *const Self) }
     }
 
-    pub(super) fn from_boxed(entries: Box<[Bucket<T>]>) -> Box<Self> {
-        unsafe { Box::from_raw(Box::into_raw(entries) as *mut Self) }
+    pub(super) fn from_boxed<A: Allocator>(entries: Box<[Bucket<T>], A>) -> Box<Self, A> {
+        let (entries, alloc) = Box::into_raw_with_allocator(entries);
+        unsafe { Box::from_raw_in(entries as *mut Self, alloc) }
     }
 
-    fn into_boxed(self: Box<Self>) -> Box<[Bucket<T>]> {
-        unsafe { Box::from_raw(Box::into_raw(self) as *mut [Bucket<T>]) }
+    fn into_boxed<A: Allocator>(self: Box<Self, A>) -> Box<[Bucket<T>], A> {
+        let (entries, alloc) = Box::into_raw_with_allocator(self);
+        unsafe { Box::from_raw_in(entries as *mut [Bucket<T>], alloc) }
     }
 }
 
 impl<T> Slice<T> {
-    pub(crate) fn into_entries(self: Box<Self>) -> Vec<Bucket<T>> {
+    pub(crate) fn into_entries<A: Allocator>(self: Box<Self, A>) -> Vec<Bucket<T>, A> {
         self.into_boxed().into_vec()
     }
 
@@ -183,14 +189,13 @@ impl<'a, T> IntoIterator for &'a Slice<T> {
     }
 }
 
-impl<T> IntoIterator for Box<Slice<T>> {
-    type IntoIter = IntoIter<T>;
-    type Item = T;
-
-    fn into_iter(self) -> Self::IntoIter {
-        IntoIter::new(self.into_entries())
-    }
-}
+/* impl<T, A: Allocator> IntoIterator for Box<Slice<T>, A> { */
+/*     type IntoIter = IntoIter<T, A>; */
+/*     type Item = T; */
+/*     fn into_iter(self) -> Self::IntoIter { */
+/*         IntoIter::new(self.into_entries()) */
+/*     } */
+/* } */
 
 impl<T> Default for &'_ Slice<T> {
     fn default() -> Self {
@@ -263,7 +268,7 @@ impl<T> Index<usize> for Slice<T> {
 // Instead, we repeat the implementations for all the core range types.
 macro_rules! impl_index {
     ($($range:ty),*) => {$(
-        impl<T, S> Index<$range> for IndexSet<T, S> {
+        impl<T, S, A: Allocator> Index<$range> for IndexSet<T, S, A> {
             type Output = Slice<T>;
 
             fn index(&self, range: $range) -> &Self::Output {

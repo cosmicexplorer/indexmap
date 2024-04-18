@@ -2,6 +2,8 @@
 //! This module encapsulates the `unsafe` access to `hashbrown::raw::RawTable`,
 //! mostly in dealing with its bucket "pointers".
 
+use core::alloc::Allocator;
+
 use super::{equivalent, get_hash, Bucket, HashValue, IndexMapCore};
 use hashbrown::raw::RawTable;
 
@@ -10,7 +12,12 @@ type RawBucket = hashbrown::raw::Bucket<usize>;
 /// Inserts many entries into a raw table without reallocating.
 ///
 /// ***Panics*** if there is not sufficient capacity already.
-pub(super) fn insert_bulk_no_grow<K, V>(indices: &mut RawTable<usize>, entries: &[Bucket<K, V>]) {
+pub(super) fn insert_bulk_no_grow<K, V, A>(
+    indices: &mut RawTable<usize, A>,
+    entries: &[Bucket<K, V>],
+) where
+    A: Allocator,
+{
     assert!(indices.capacity() - indices.len() >= entries.len());
     for entry in entries {
         // SAFETY: we asserted that sufficient capacity exists for all entries.
@@ -32,7 +39,10 @@ impl core::fmt::Debug for DebugIndices<'_> {
     }
 }
 
-impl<K, V> IndexMapCore<K, V> {
+impl<K, V, A> IndexMapCore<K, V, A>
+where
+    A: Allocator,
+{
     /// Sweep the whole table to erase indices start..end
     pub(super) fn erase_indices_sweep(&mut self, start: usize, end: usize) {
         // SAFETY: we're not letting any of the buckets escape this function
@@ -79,7 +89,7 @@ impl<K, V> IndexMapCore<K, V> {
         &mut self,
         hash: HashValue,
         mut is_match: impl FnMut(&K) -> bool,
-    ) -> Result<RawTableEntry<'_, K, V>, &mut Self> {
+    ) -> Result<RawTableEntry<'_, K, V, A>, &mut Self> {
         let entries = &*self.entries;
         let eq = move |&i: &usize| is_match(&entries[i].key);
         match self.indices.find(hash.get(), eq) {
@@ -103,16 +113,22 @@ impl<K, V> IndexMapCore<K, V> {
 /// A view into an occupied raw entry in an `IndexMap`.
 // SAFETY: The lifetime of the map reference also constrains the raw bucket,
 // which is essentially a raw pointer into the map indices.
-pub(super) struct RawTableEntry<'a, K, V> {
-    map: &'a mut IndexMapCore<K, V>,
+pub(super) struct RawTableEntry<'a, K, V, A>
+where
+    A: Allocator,
+{
+    map: &'a mut IndexMapCore<K, V, A>,
     raw_bucket: RawBucket,
 }
 
 // `hashbrown::raw::Bucket` is only `Send`, not `Sync`.
 // SAFETY: `&self` only accesses the bucket to read it.
-unsafe impl<K: Sync, V: Sync> Sync for RawTableEntry<'_, K, V> {}
+unsafe impl<K: Sync, V: Sync, A: Allocator + Sync> Sync for RawTableEntry<'_, K, V, A> {}
 
-impl<'a, K, V> RawTableEntry<'a, K, V> {
+impl<'a, K, V, A> RawTableEntry<'a, K, V, A>
+where
+    A: Allocator,
+{
     /// Return the index of the key-value pair
     #[inline]
     pub(super) fn index(&self) -> usize {
@@ -138,7 +154,7 @@ impl<'a, K, V> RawTableEntry<'a, K, V> {
     }
 
     /// Remove the index from indices, leaving the actual entries to the caller.
-    pub(super) fn remove_index(self) -> (&'a mut IndexMapCore<K, V>, usize) {
+    pub(super) fn remove_index(self) -> (&'a mut IndexMapCore<K, V, A>, usize) {
         // SAFETY: This is safe because it can only happen once (self is consumed)
         // and map.indices have not been modified since entry construction
         let (index, _slot) = unsafe { self.map.indices.remove(self.raw_bucket) };
@@ -146,7 +162,7 @@ impl<'a, K, V> RawTableEntry<'a, K, V> {
     }
 
     /// Take no action, just return the index and the original map reference.
-    pub(super) fn into_inner(self) -> (&'a mut IndexMapCore<K, V>, usize) {
+    pub(super) fn into_inner(self) -> (&'a mut IndexMapCore<K, V, A>, usize) {
         let index = self.index();
         (self.map, index)
     }

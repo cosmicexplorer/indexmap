@@ -1,6 +1,10 @@
 // We *mostly* avoid unsafe code, but `map::core::raw` allows it to use `RawTable` buckets.
 #![deny(unsafe_code)]
 #![warn(rust_2018_idioms)]
+#![feature(allocator_api)]
+#![feature(const_refs_to_cell)]
+#![feature(const_trait_impl)]
+#![feature(effects)]
 #![no_std]
 
 //! [`IndexMap`] is a hash table where the iteration order of the key-value
@@ -110,6 +114,7 @@ extern crate alloc;
 extern crate std;
 
 use alloc::vec::{self, Vec};
+use core::alloc::Allocator;
 
 mod arbitrary;
 #[macro_use]
@@ -209,7 +214,8 @@ impl<K, V> Bucket<K, V> {
 
 trait Entries {
     type Entry;
-    fn into_entries(self) -> Vec<Self::Entry>;
+    type Arena: Allocator;
+    fn into_entries(self) -> Vec<Self::Entry, Self::Arena>;
     fn as_entries(&self) -> &[Self::Entry];
     fn as_entries_mut(&mut self) -> &mut [Self::Entry];
     fn with_entries<F>(&mut self, f: F)

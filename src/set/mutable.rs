@@ -1,3 +1,4 @@
+use core::alloc::Allocator;
 use core::hash::{BuildHasher, Hash};
 
 use super::{Equivalent, IndexSet};
@@ -48,9 +49,10 @@ pub trait MutableValues: private::Sealed {
 /// Opt-in mutable access to [`IndexSet`] values.
 ///
 /// See [`MutableValues`] for more information.
-impl<T, S> MutableValues for IndexSet<T, S>
+impl<T, S, A> MutableValues for IndexSet<T, S, A>
 where
     S: BuildHasher,
+    A: Allocator,
 {
     type Value = T;
 
@@ -82,5 +84,5 @@ where
 mod private {
     pub trait Sealed {}
 
-    impl<T, S> Sealed for super::IndexSet<T, S> {}
+    impl<T, S, A> Sealed for super::IndexSet<T, S, A> where A: ::core::alloc::Allocator {}
 }

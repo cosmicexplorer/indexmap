@@ -1,11 +1,13 @@
 use super::{
-    Bucket, Entries, IndexMap, IntoIter, IntoKeys, IntoValues, Iter, IterMut, Keys, Values,
+    Bucket, Entries, IndexMap, IntoKeys, IntoValues, Iter, IterMut, Keys, Values,
     ValuesMut,
+    /* IntoIter,  */
 };
 use crate::util::try_simplify_range;
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+use core::alloc::Allocator;
 use core::cmp::Ordering;
 use core::fmt;
 use core::hash::{Hash, Hasher};
@@ -35,17 +37,28 @@ impl<K, V> Slice<K, V> {
         unsafe { &mut *(entries as *mut [Bucket<K, V>] as *mut Self) }
     }
 
-    pub(super) fn from_boxed(entries: Box<[Bucket<K, V>]>) -> Box<Self> {
-        unsafe { Box::from_raw(Box::into_raw(entries) as *mut Self) }
+    pub(super) fn from_boxed<A>(entries: Box<[Bucket<K, V>], A>) -> Box<Self, A>
+    where
+        A: Allocator,
+    {
+        let (entries, alloc) = Box::into_raw_with_allocator(entries);
+        unsafe { Box::from_raw_in(entries as *mut Self, alloc) }
     }
 
-    fn into_boxed(self: Box<Self>) -> Box<[Bucket<K, V>]> {
-        unsafe { Box::from_raw(Box::into_raw(self) as *mut [Bucket<K, V>]) }
+    fn into_boxed<A>(self: Box<Self, A>) -> Box<[Bucket<K, V>], A>
+    where
+        A: Allocator,
+    {
+        let (entries, alloc) = Box::into_raw_with_allocator(self);
+        unsafe { Box::from_raw_in(entries as *mut [Bucket<K, V>], alloc) }
     }
 }
 
 impl<K, V> Slice<K, V> {
-    pub(crate) fn into_entries(self: Box<Self>) -> Vec<Bucket<K, V>> {
+    pub(crate) fn into_entries<A>(self: Box<Self, A>) -> Vec<Bucket<K, V>, A>
+    where
+        A: Allocator,
+    {
         self.into_boxed().into_vec()
     }
 
@@ -193,7 +206,7 @@ impl<K, V> Slice<K, V> {
     }
 
     /// Return an owning iterator over the keys of the map slice.
-    pub fn into_keys(self: Box<Self>) -> IntoKeys<K, V> {
+    pub fn into_keys<A: Allocator>(self: Box<Self, A>) -> IntoKeys<K, V, A> {
         IntoKeys::new(self.into_entries())
     }
 
@@ -208,7 +221,7 @@ impl<K, V> Slice<K, V> {
     }
 
     /// Return an owning iterator over the values of the map slice.
-    pub fn into_values(self: Box<Self>) -> IntoValues<K, V> {
+    pub fn into_values<A: Allocator>(self: Box<Self, A>) -> IntoValues<K, V, A> {
         IntoValues::new(self.into_entries())
     }
 
@@ -290,14 +303,13 @@ impl<'a, K, V> IntoIterator for &'a mut Slice<K, V> {
     }
 }
 
-impl<K, V> IntoIterator for Box<Slice<K, V>> {
-    type IntoIter = IntoIter<K, V>;
-    type Item = (K, V);
-
-    fn into_iter(self) -> Self::IntoIter {
-        IntoIter::new(self.into_entries())
-    }
-}
+/* impl<K, V, A: Allocator> IntoIterator for Box<Slice<K, V>, A> { */
+/*     type IntoIter = IntoIter<K, V, A>; */
+/*     type Item = (K, V); */
+/*     fn into_iter(self) -> Self::IntoIter { */
+/*         IntoIter::new(self.into_entries()) */
+/*     } */
+/* } */
 
 impl<K, V> Default for &'_ Slice<K, V> {
     fn default() -> Self {
@@ -384,7 +396,7 @@ impl<K, V> IndexMut<usize> for Slice<K, V> {
 // Instead, we repeat the implementations for all the core range types.
 macro_rules! impl_index {
     ($($range:ty),*) => {$(
-        impl<K, V, S> Index<$range> for IndexMap<K, V, S> {
+        impl<K, V, S, A> Index<$range> for IndexMap<K, V, S, A> where A: Allocator {
             type Output = Slice<K, V>;
 
             fn index(&self, range: $range) -> &Self::Output {
@@ -392,7 +404,7 @@ macro_rules! impl_index {
             }
         }
 
-        impl<K, V, S> IndexMut<$range> for IndexMap<K, V, S> {
+        impl<K, V, S, A> IndexMut<$range> for IndexMap<K, V, S, A> where A: Allocator {
             fn index_mut(&mut self, range: $range) -> &mut Self::Output {
                 Slice::from_mut_slice(&mut self.as_entries_mut()[range])
             }

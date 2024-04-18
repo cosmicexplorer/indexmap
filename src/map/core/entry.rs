@@ -1,10 +1,13 @@
 use super::raw::RawTableEntry;
 use super::IndexMapCore;
 use crate::HashValue;
-use core::{fmt, mem};
+use core::{alloc::Allocator, fmt, mem};
 
-impl<K, V> IndexMapCore<K, V> {
-    pub(crate) fn entry(&mut self, hash: HashValue, key: K) -> Entry<'_, K, V>
+impl<K, V, A> IndexMapCore<K, V, A>
+where
+    A: Allocator,
+{
+    pub(crate) fn entry(&mut self, hash: HashValue, key: K) -> Entry<'_, K, V, A>
     where
         K: Eq,
     {
@@ -17,14 +20,20 @@ impl<K, V> IndexMapCore<K, V> {
 
 /// Entry for an existing key-value pair in an [`IndexMap`][crate::IndexMap]
 /// or a vacant location to insert one.
-pub enum Entry<'a, K, V> {
+pub enum Entry<'a, K, V, A>
+where
+    A: Allocator,
+{
     /// Existing slot with equivalent key.
-    Occupied(OccupiedEntry<'a, K, V>),
+    Occupied(OccupiedEntry<'a, K, V, A>),
     /// Vacant slot (no equivalent key in the map).
-    Vacant(VacantEntry<'a, K, V>),
+    Vacant(VacantEntry<'a, K, V, A>),
 }
 
-impl<'a, K, V> Entry<'a, K, V> {
+impl<'a, K, V, A> Entry<'a, K, V, A>
+where
+    A: Allocator,
+{
     /// Return the index where the key-value pair exists or will be inserted.
     pub fn index(&self) -> usize {
         match *self {
@@ -111,7 +120,7 @@ impl<'a, K, V> Entry<'a, K, V> {
     }
 }
 
-impl<K: fmt::Debug, V: fmt::Debug> fmt::Debug for Entry<'_, K, V> {
+impl<K: fmt::Debug, V: fmt::Debug, A: Allocator> fmt::Debug for Entry<'_, K, V, A> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut tuple = f.debug_tuple("Entry");
         match self {
@@ -124,11 +133,17 @@ impl<K: fmt::Debug, V: fmt::Debug> fmt::Debug for Entry<'_, K, V> {
 
 /// A view into an occupied entry in an [`IndexMap`][crate::IndexMap].
 /// It is part of the [`Entry`] enum.
-pub struct OccupiedEntry<'a, K, V> {
-    raw: RawTableEntry<'a, K, V>,
+pub struct OccupiedEntry<'a, K, V, A>
+where
+    A: Allocator,
+{
+    raw: RawTableEntry<'a, K, V, A>,
 }
 
-impl<'a, K, V> OccupiedEntry<'a, K, V> {
+impl<'a, K, V, A> OccupiedEntry<'a, K, V, A>
+where
+    A: Allocator,
+{
     /// Return the index of the key-value pair
     #[inline]
     pub fn index(&self) -> usize {
@@ -269,7 +284,7 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
     }
 }
 
-impl<K: fmt::Debug, V: fmt::Debug> fmt::Debug for OccupiedEntry<'_, K, V> {
+impl<K: fmt::Debug, V: fmt::Debug, A: Allocator> fmt::Debug for OccupiedEntry<'_, K, V, A> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("OccupiedEntry")
             .field("key", self.key())
@@ -280,13 +295,19 @@ impl<K: fmt::Debug, V: fmt::Debug> fmt::Debug for OccupiedEntry<'_, K, V> {
 
 /// A view into a vacant entry in an [`IndexMap`][crate::IndexMap].
 /// It is part of the [`Entry`] enum.
-pub struct VacantEntry<'a, K, V> {
-    map: &'a mut IndexMapCore<K, V>,
+pub struct VacantEntry<'a, K, V, A>
+where
+    A: Allocator,
+{
+    map: &'a mut IndexMapCore<K, V, A>,
     hash: HashValue,
     key: K,
 }
 
-impl<'a, K, V> VacantEntry<'a, K, V> {
+impl<'a, K, V, A> VacantEntry<'a, K, V, A>
+where
+    A: Allocator,
+{
     /// Return the index where a key-value pair may be inserted.
     pub fn index(&self) -> usize {
         self.map.indices.len()
@@ -341,7 +362,7 @@ impl<'a, K, V> VacantEntry<'a, K, V> {
     }
 }
 
-impl<K: fmt::Debug, V> fmt::Debug for VacantEntry<'_, K, V> {
+impl<K: fmt::Debug, V, A: Allocator> fmt::Debug for VacantEntry<'_, K, V, A> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("VacantEntry").field(self.key()).finish()
     }
@@ -350,15 +371,21 @@ impl<K: fmt::Debug, V> fmt::Debug for VacantEntry<'_, K, V> {
 /// A view into an occupied entry in an [`IndexMap`][crate::IndexMap] obtained by index.
 ///
 /// This `struct` is created from the [`get_index_entry`][crate::IndexMap::get_index_entry] method.
-pub struct IndexedEntry<'a, K, V> {
-    map: &'a mut IndexMapCore<K, V>,
+pub struct IndexedEntry<'a, K, V, A>
+where
+    A: Allocator,
+{
+    map: &'a mut IndexMapCore<K, V, A>,
     // We have a mutable reference to the map, which keeps the index
     // valid and pointing to the correct entry.
     index: usize,
 }
 
-impl<'a, K, V> IndexedEntry<'a, K, V> {
-    pub(crate) fn new(map: &'a mut IndexMapCore<K, V>, index: usize) -> Self {
+impl<'a, K, V, A> IndexedEntry<'a, K, V, A>
+where
+    A: Allocator,
+{
+    pub(crate) fn new(map: &'a mut IndexMapCore<K, V, A>, index: usize) -> Self {
         Self { map, index }
     }
 
@@ -470,7 +497,7 @@ impl<'a, K, V> IndexedEntry<'a, K, V> {
     }
 }
 
-impl<K: fmt::Debug, V: fmt::Debug> fmt::Debug for IndexedEntry<'_, K, V> {
+impl<K: fmt::Debug, V: fmt::Debug, A: Allocator> fmt::Debug for IndexedEntry<'_, K, V, A> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IndexedEntry")
             .field("index", &self.index)
